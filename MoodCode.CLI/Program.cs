@@ -17,15 +17,44 @@ class Program
             var host = CreateHostBuilder(args).Build();
             var processor = host.Services.GetRequiredService<CommitProcessor>();
 
-            if (args.Length == 0)
+            // Проверка наличия флага --diff-based
+            bool useDiffBasedGeneration = false;
+            string commitMessage = string.Empty;
+            
+            for (int i = 0; i < args.Length; i++)
             {
-                Console.WriteLine("Usage: moodcode-hook <commit-message>");
-                Console.WriteLine("This tool is typically called by git hooks.");
-                return;
+                if (args[i] == "--diff-based")
+                {
+                    useDiffBasedGeneration = true;
+                }
+                else
+                {
+                    // Собираем все аргументы, кроме флагов
+                    if (!args[i].StartsWith("--"))
+                    {
+                        commitMessage += (commitMessage.Length > 0 ? " " : "") + args[i];
+                    }
+                }
             }
 
-            var commitMessage = string.Join(" ", args);
-            var analysis = await processor.AnalyzeCommitAsync(commitMessage);
+            if (args.Length == 0 || (useDiffBasedGeneration && string.IsNullOrWhiteSpace(commitMessage)))
+            {
+                if (useDiffBasedGeneration)
+                {
+                    // В режиме diff-based можно работать без сообщения
+                    commitMessage = string.Empty;
+                }
+                else
+                {
+                    Console.WriteLine("Использование: moodcode-hook <сообщение-коммита>");
+                    Console.WriteLine("Опции:");
+                    Console.WriteLine("  --diff-based    Генерировать сообщение коммита на основе изменений в коде");
+                    Console.WriteLine("Этот инструмент обычно вызывается git hooks.");
+                    return;
+                }
+            }
+
+            var analysis = await processor.AnalyzeCommitAsync(commitMessage, useDiffBasedGeneration: useDiffBasedGeneration);
             
             processor.DisplayAnalysis(analysis);
 

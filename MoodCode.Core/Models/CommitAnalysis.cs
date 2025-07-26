@@ -7,4 +7,5 @@ public class CommitAnalysis
     public bool NeedsImprovement { get; set; }
     public List<string> ModifiedFiles { get; set; } = new();
     public string GitDiff { get; set; } = string.Empty;
+    public bool IsDiffBasedGeneration { get; set; }
 }

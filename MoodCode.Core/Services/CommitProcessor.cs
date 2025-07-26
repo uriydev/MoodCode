@@ -27,11 +27,12 @@ public class CommitProcessor
     /// </summary>
     /// <param name="commitMessage">Исходное сообщение коммита.</param>
     /// <param name="repositoryPath">Путь к репозиторию Git. Если null, будет использован текущий репозиторий.</param>
+    /// <param name="useDiffBasedGeneration">Использовать ли генерацию на основе diff.</param>
     /// <returns>Результат анализа, содержащий оригинальное и улучшенное сообщения.</returns>
     /// <exception cref="InvalidOperationException">Если нет подготовленных изменений в репозитории.</exception>
-    public async Task<CommitAnalysis> AnalyzeCommitAsync(string commitMessage, string? repositoryPath = null)
+    public async Task<CommitAnalysis> AnalyzeCommitAsync(string commitMessage, string? repositoryPath = null, bool useDiffBasedGeneration = false)
     {
-        if (string.IsNullOrEmpty(commitMessage))
+        if (string.IsNullOrEmpty(commitMessage) && !useDiffBasedGeneration)
             throw new ArgumentNullException(nameof(commitMessage));
 
         repositoryPath ??= _gitAnalyzer.GetCurrentRepositoryPath();
@@ -44,18 +45,27 @@ public class CommitProcessor
         var analysis = new CommitAnalysis
         {
             OriginalMessage = commitMessage,
-            NeedsImprovement = _gitAnalyzer.IsBadCommitMessage(commitMessage),
+            NeedsImprovement = _gitAnalyzer.IsBadCommitMessage(commitMessage) || useDiffBasedGeneration,
             ModifiedFiles = _gitAnalyzer.GetModifiedFiles(repositoryPath),
-            GitDiff = _gitAnalyzer.GetStagedDiff(repositoryPath)
+            GitDiff = _gitAnalyzer.GetStagedDiff(repositoryPath),
+            IsDiffBasedGeneration = useDiffBasedGeneration
         };
 
         if (analysis.NeedsImprovement)
         {
-            Console.WriteLine("🤖 Generating improved commit message...");
-            analysis.SuggestedMessage = await _commitRewriter.RewriteAsync(
-                analysis.GitDiff, 
-                analysis.OriginalMessage
-            );
+            if (useDiffBasedGeneration)
+            {
+                Console.WriteLine("🤖 Генерация сообщения коммита на основе изменений в коде...");
+                analysis.SuggestedMessage = await _commitRewriter.GenerateFromDiffAsync(analysis.GitDiff);
+            }
+            else
+            {
+                Console.WriteLine("🤖 Улучшение сообщения коммита...");
+                analysis.SuggestedMessage = await _commitRewriter.RewriteAsync(
+                    analysis.GitDiff, 
+                    analysis.OriginalMessage
+                );
+            }
         }
         else
         {
@@ -72,8 +82,16 @@ public class CommitProcessor
         
         if (analysis.NeedsImprovement)
         {
-            WriteColor($"❌ Оригинал: \"{analysis.OriginalMessage}\"", ConsoleColor.Red);
-            WriteColor($"✅ Предложение: \"{analysis.SuggestedMessage}\"", ConsoleColor.Green);
+            if (analysis.IsDiffBasedGeneration)
+            {
+                WriteColor($"✨ Сгенерировано на основе изменений: \"{analysis.SuggestedMessage}\"", ConsoleColor.Green);
+            }
+            else
+            {
+                WriteColor($"❌ Оригинал: \"{analysis.OriginalMessage}\"", ConsoleColor.Red);
+                WriteColor($"✅ Предложение: \"{analysis.SuggestedMessage}\"", ConsoleColor.Green);
+            }
+            
             Console.WriteLine();
             WriteColor($"📁 Измененные файлы: {string.Join(", ", analysis.ModifiedFiles)}", ConsoleColor.Yellow);
         }

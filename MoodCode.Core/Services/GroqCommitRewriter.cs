@@ -44,6 +44,32 @@ public class GroqCommitRewriter : ICommitRewriter
             return currentMessage; // Fallback to original message
         }
     }
+    
+    public async Task<string> GenerateFromDiffAsync(string gitDiff)
+    {
+        try
+        {
+            var prompt = BuildDiffBasedPrompt(gitDiff);
+            var request = CreateRequest(prompt);
+            
+            var response = await _client.ExecuteAsync(request);
+            
+            if (!response.IsSuccessful)
+            {
+                throw new Exception($"Groq API error: {response.ErrorMessage}");
+            }
+
+            var groqResponse = JsonConvert.DeserializeObject<GroqResponse>(response.Content!);
+            var generatedMessage = groqResponse?.Choices?.FirstOrDefault()?.Message?.Content?.Trim();
+
+            return !string.IsNullOrEmpty(generatedMessage) ? generatedMessage : "Update code";
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error generating commit message from diff: {ex.Message}");
+            return "Update code"; // Fallback message
+        }
+    }
 
     private string BuildPrompt(string gitDiff, string currentMessage)
     {
@@ -67,6 +93,29 @@ Examples:
 - ""test"" → ""test: add unit tests for payment processing""
 
 Improved commit message:";
+    }
+    
+    private string BuildDiffBasedPrompt(string gitDiff)
+    {
+        return $@"Generate a concise and professional git commit message based on the following changes:
+
+Git changes:
+{TruncateGitDiff(gitDiff)}
+
+Rules:
+- Keep it under 72 characters
+- Use imperative mood (""Add"" not ""Added"")
+- Be specific about what changed
+- Follow conventional commits format when possible (feat:, fix:, docs:, etc.)
+- Return ONLY the commit message, nothing else
+- Focus on the most important changes if there are many
+
+Examples:
+- For added user authentication code → ""feat: implement user authentication flow""
+- For fixed validation bug → ""fix: resolve input validation in registration form""
+- For documentation updates → ""docs: update API documentation with new endpoints""
+
+Generated commit message:";
     }
 
     private RestRequest CreateRequest(string prompt)
